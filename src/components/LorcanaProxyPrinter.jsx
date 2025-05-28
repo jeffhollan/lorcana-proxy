@@ -48,7 +48,7 @@ export default function LorcanaProxyPrinter() {
         if (cards.length < 9) {
             const newCard = {
                 id: Date.now(),
-                src: corsProxyUrl(cardData.image_uris.digital.normal),
+                src: cardData.image_uris.digital.normal, // Salva l'URL originale, non proxato
                 type: 'search',
                 name: cardData.name,
                 set: cardData.set.name
@@ -69,7 +69,7 @@ export default function LorcanaProxyPrinter() {
         try {
             const img = new Image();
             img.crossOrigin = 'anonymous';
-            img.src = corsProxyUrl(cardUrl.trim());
+            img.src = cardUrl.trim(); // Salva l'URL originale, non proxato
             await new Promise((resolve, reject) => {
                 img.onload = resolve;
                 img.onerror = reject;
@@ -133,11 +133,11 @@ export default function LorcanaProxyPrinter() {
         }
 
         try {
-            // Creiamo un canvas temporaneo per l'intera pagina A4
+            // Canvas temporaneo per l'intera pagina A4 a 150 DPI
+            const DPI = 150;
             const canvas = document.createElement('canvas');
-            // A4 dimensions in pixels at 300 DPI
-            canvas.width = 2480;  // 210mm * 300DPI / 25.4mm
-            canvas.height = 3508; // 297mm * 300DPI / 25.4mm
+            canvas.width = Math.round(210 / 25.4 * DPI); // 210mm
+            canvas.height = Math.round(297 / 25.4 * DPI); // 297mm
             const ctx = canvas.getContext('2d');
 
             // Sfondo bianco
@@ -145,41 +145,23 @@ export default function LorcanaProxyPrinter() {
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // Calcola le dimensioni delle carte e gli spazi
-            const cardWidth = Math.floor(canvas.width / 3) - 40;  // -40 per il margine
-            const cardHeight = Math.floor(canvas.height / 3) - 40;
-            const marginX = 20;
-            const marginY = 20;
-            const spacing = 20;
+            const cardWidth = Math.floor(canvas.width / 3) - 12;  // margine minore
+            const cardHeight = Math.floor(canvas.height / 3) - 12;
+            const marginX = 6;
+            const marginY = 6;
+            const spacing = 6;
 
-            // Funzione per caricare un'immagine
+            // Funzione per caricare un'immagine (usa proxy solo se serve)
             const loadImage = (src) => {
                 return new Promise((resolve, reject) => {
-                    const img = new Image();
-                    if (src.startsWith('data:')) {
-                        img.onload = () => resolve(img);
-                        img.onerror = reject;
+                    const img = new window.Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => resolve(img);
+                    img.onerror = () => reject(new Error('Immagine non caricata'));
+                    if (src.startsWith('data:') || src.startsWith('blob:')) {
                         img.src = src;
                     } else {
-                        // Per immagini remote, crea un canvas temporaneo
-                        const tempImg = new Image();
-                        tempImg.crossOrigin = 'anonymous';
-                        // Utilizziamo il proxy CORS per le immagini remote
-                        const proxiedUrl = corsProxyUrl(src);
-                        tempImg.onload = () => {
-                            const tempCanvas = document.createElement('canvas');
-                            tempCanvas.width = tempImg.width;
-                            tempCanvas.height = tempImg.height;
-                            const tempCtx = tempCanvas.getContext('2d');
-                            tempCtx.drawImage(tempImg, 0, 0);
-
-                            // Crea una nuova immagine dal canvas
-                            const finalImg = new Image();
-                            finalImg.onload = () => resolve(finalImg);
-                            finalImg.onerror = reject;
-                            finalImg.src = tempCanvas.toDataURL('image/jpeg', 1.0);
-                        };
-                        tempImg.onerror = reject;
-                        tempImg.src = proxiedUrl;
+                        img.src = corsProxyUrl(src);
                     }
                 });
             };
@@ -193,51 +175,47 @@ export default function LorcanaProxyPrinter() {
 
                 try {
                     const img = await loadImage(cards[i].src);
-
                     // Calcola le dimensioni mantenendo l'aspect ratio
                     let drawWidth = cardWidth;
                     let drawHeight = cardHeight;
                     const imgRatio = img.width / img.height;
                     const cardRatio = cardWidth / cardHeight;
-
                     if (imgRatio > cardRatio) {
                         drawHeight = drawWidth / imgRatio;
                     } else {
                         drawWidth = drawHeight * imgRatio;
                     }
-
                     // Centra l'immagine nello spazio della carta
                     const xOffset = x + (cardWidth - drawWidth) / 2;
                     const yOffset = y + (cardHeight - drawHeight) / 2;
-
                     ctx.drawImage(img, xOffset, yOffset, drawWidth, drawHeight);
-
                     // Disegna un bordo
                     ctx.strokeStyle = '#000000';
                     ctx.lineWidth = 2;
-                    ctx.strokeRect(xOffset, yOffset, drawWidth, drawHeight);
-
+                    ctx.strokeRect(x, y, cardWidth, cardHeight);
                 } catch (error) {
-                    console.error(`Errore nel caricamento della carta ${i + 1}:`, error);
-                    alert(`Errore nel caricamento della carta ${i + 1}. Assicurati che l'immagine sia accessibile.`);
-                    return;
+                    // Se l'immagine non si carica, disegna un rettangolo grigio
+                    ctx.fillStyle = '#cccccc';
+                    ctx.fillRect(x, y, cardWidth, cardHeight);
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, cardWidth, cardHeight);
+                    ctx.fillStyle = '#333';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.fillText('Immagine non trovata', x + 10, y + cardHeight / 2);
                 }
             }
 
             // Converti il canvas in PDF
-            const imgData = canvas.toDataURL('image/jpeg', 1.0);
+            const imgData = canvas.toDataURL('image/jpeg', 0.92);
             const pdf = new jsPDF({
                 orientation: 'portrait',
                 unit: 'mm',
                 format: 'a4'
             });
-
             pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-
-            // Apre la finestra di stampa
             pdf.autoPrint();
             window.open(pdf.output('bloburl'), '_blank');
-
         } catch (error) {
             console.error('Errore nella generazione del PDF:', error);
             alert('Errore nella generazione del PDF. Assicurati che le immagini siano accessibili.');
@@ -443,7 +421,7 @@ export default function LorcanaProxyPrinter() {
                                                     onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                                                 >
                                                     <img
-                                                        src={corsProxyUrl(card.image_uris.digital.normal)}
+                                                        src={card.image_uris.digital.normal}
                                                         className="card-img-top"
                                                         alt={card.name}
                                                         style={{
