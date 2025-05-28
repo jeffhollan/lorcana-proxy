@@ -132,6 +132,13 @@ export default function LorcanaProxyPrinter() {
             return;
         }
 
+        // Apro subito la finestra per evitare il blocco pop-up
+        const pdfWindow = window.open('', '_blank');
+        if (!pdfWindow) {
+            alert('Pop-up bloccato! Consenti i pop-up per questo sito.');
+            return;
+        }
+
         try {
             // Canvas temporaneo per l'intera pagina A4 a 150 DPI
             const DPI = 150;
@@ -215,10 +222,14 @@ export default function LorcanaProxyPrinter() {
             });
             pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
             pdf.autoPrint();
-            window.open(pdf.output('bloburl'), '_blank');
+            // Scrivi il PDF nella finestra già aperta
+            const pdfBlob = pdf.output('blob');
+            const pdfUrl = URL.createObjectURL(new Blob([pdfBlob], { type: 'application/pdf' }));
+            pdfWindow.location.href = pdfUrl;
         } catch (error) {
             console.error('Errore nella generazione del PDF:', error);
             alert('Errore nella generazione del PDF. Assicurati che le immagini siano accessibili.');
+            pdfWindow.close();
         }
     };
 
