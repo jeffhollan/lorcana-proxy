@@ -140,23 +140,33 @@ export default function LorcanaProxyPrinter() {
         }
 
         try {
-            // Canvas temporaneo per l'intera pagina A4 a 150 DPI
+            // Dimensioni carta in mm
+            const cardWidthMM = 64;
+            const cardHeightMM = 89;
+            const cardsPerRow = 3;
+            const cardsPerCol = 3;
+            const spacingMM = 4; // Spazio tra le carte
+            const pageWidthMM = 210;
+            const pageHeightMM = 297;
+
+            // Calcola la larghezza e altezza totale occupata dalla griglia
+            const totalGridWidth = cardWidthMM * cardsPerRow + spacingMM * (cardsPerRow - 1);
+            const totalGridHeight = cardHeightMM * cardsPerCol + spacingMM * (cardsPerCol - 1);
+            // Calcola il margine per centrare la griglia
+            const marginX = (pageWidthMM - totalGridWidth) / 2;
+            const marginY = (pageHeightMM - totalGridHeight) / 2;
+
+            // Canvas temporaneo per la pagina A4 a 150 DPI
             const DPI = 150;
             const canvas = document.createElement('canvas');
-            canvas.width = Math.round(210 / 25.4 * DPI); // 210mm
-            canvas.height = Math.round(297 / 25.4 * DPI); // 297mm
+            canvas.width = Math.round(pageWidthMM / 25.4 * DPI);
+            canvas.height = Math.round(pageHeightMM / 25.4 * DPI);
             const ctx = canvas.getContext('2d');
-
-            // Sfondo bianco
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Calcola le dimensioni delle carte e gli spazi
-            const cardWidth = Math.floor(canvas.width / 3) - 12;  // margine minore
-            const cardHeight = Math.floor(canvas.height / 3) - 12;
-            const marginX = 6;
-            const marginY = 6;
-            const spacing = 6;
+            // mm -> px
+            const mmToPx = mm => Math.round(mm / 25.4 * DPI);
 
             // Funzione per caricare un'immagine (usa proxy solo se serve)
             const loadImage = (src) => {
@@ -177,39 +187,42 @@ export default function LorcanaProxyPrinter() {
             for (let i = 0; i < cards.length && i < 9; i++) {
                 const row = Math.floor(i / 3);
                 const col = i % 3;
-                const x = marginX + col * (cardWidth + spacing);
-                const y = marginY + row * (cardHeight + spacing);
+                const xMM = marginX + col * (cardWidthMM + spacingMM);
+                const yMM = marginY + row * (cardHeightMM + spacingMM);
+                const x = mmToPx(xMM);
+                const y = mmToPx(yMM);
+                const w = mmToPx(cardWidthMM);
+                const h = mmToPx(cardHeightMM);
 
                 try {
                     const img = await loadImage(cards[i].src);
                     // Calcola le dimensioni mantenendo l'aspect ratio
-                    let drawWidth = cardWidth;
-                    let drawHeight = cardHeight;
+                    let drawWidth = w;
+                    let drawHeight = h;
                     const imgRatio = img.width / img.height;
-                    const cardRatio = cardWidth / cardHeight;
+                    const cardRatio = w / h;
                     if (imgRatio > cardRatio) {
                         drawHeight = drawWidth / imgRatio;
                     } else {
                         drawWidth = drawHeight * imgRatio;
                     }
                     // Centra l'immagine nello spazio della carta
-                    const xOffset = x + (cardWidth - drawWidth) / 2;
-                    const yOffset = y + (cardHeight - drawHeight) / 2;
+                    const xOffset = x + (w - drawWidth) / 2;
+                    const yOffset = y + (h - drawHeight) / 2;
                     ctx.drawImage(img, xOffset, yOffset, drawWidth, drawHeight);
                     // Disegna un bordo
                     ctx.strokeStyle = '#000000';
                     ctx.lineWidth = 2;
-                    ctx.strokeRect(x, y, cardWidth, cardHeight);
+                    ctx.strokeRect(x, y, w, h);
                 } catch (error) {
-                    // Se l'immagine non si carica, disegna un rettangolo grigio
                     ctx.fillStyle = '#cccccc';
-                    ctx.fillRect(x, y, cardWidth, cardHeight);
+                    ctx.fillRect(x, y, w, h);
                     ctx.strokeStyle = '#000000';
                     ctx.lineWidth = 2;
-                    ctx.strokeRect(x, y, cardWidth, cardHeight);
+                    ctx.strokeRect(x, y, w, h);
                     ctx.fillStyle = '#333';
                     ctx.font = 'bold 16px Arial';
-                    ctx.fillText('Immagine non trovata', x + 10, y + cardHeight / 2);
+                    ctx.fillText('Immagine non trovata', x + 10, y + h / 2);
                 }
             }
 
@@ -220,7 +233,7 @@ export default function LorcanaProxyPrinter() {
                 unit: 'mm',
                 format: 'a4'
             });
-            pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+            pdf.addImage(imgData, 'JPEG', 0, 0, pageWidthMM, pageHeightMM);
             pdf.autoPrint();
             // Scrivi il PDF nella finestra già aperta
             const pdfBlob = pdf.output('blob');
