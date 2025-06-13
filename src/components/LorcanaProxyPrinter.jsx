@@ -1,3 +1,4 @@
+
 import { useState, useRef } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import jsPDF from 'jspdf';
@@ -11,11 +12,13 @@ export default function LorcanaProxyPrinter() {
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
     const [showResults, setShowResults] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const fileInputRef = useRef(null);
 
     const corsProxyUrl = (url) => {
         return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-    };
+    }
 
     const searchCards = async () => {
         if (!searchQuery.trim()) {
@@ -29,15 +32,15 @@ export default function LorcanaProxyPrinter() {
             const response = await fetch(`https://api.lorcast.com/v0/cards/search?q=${encodeURIComponent(searchQuery)}`);
             if (response.ok) {
                 const data = await response.json();
-                // L'API restituisce i risultati all'interno dell'oggetto 'results'
+                // The API returns results inside the 'results' object
                 setSearchResults(data.results || []);
                 setShowResults(true);
             } else {
-                console.error('Errore nella ricerca:', response.status);
+                console.error('Search error:', response.status);
                 setSearchResults([]);
             }
         } catch (error) {
-            console.error('Errore nella ricerca:', error);
+            console.error('Search error:', error);
             setSearchResults([]);
         } finally {
             setIsSearching(false);
@@ -45,25 +48,19 @@ export default function LorcanaProxyPrinter() {
     };
 
     const addCardFromSearch = (cardData) => {
-        if (cards.length < 9) {
-            const newCard = {
-                id: Date.now(),
-                src: cardData.image_uris.digital.normal, // Salva l'URL originale, non proxato
-                type: 'search',
-                name: cardData.name,
-                set: cardData.set.name
-            };
-            setCards([...cards, newCard]);
-            setSearchQuery('');
-            toast.success(`${cardData.name} aggiunta alla lista`);
-        } else {
-            toast.error('Hai raggiunto il limite massimo di 9 carte');
-        }
-    };
+        const newCard = {
+            id: Date.now(),
+            src: cardData.image_uris.digital.normal, // Save the original URL, not proxied
+            type: 'search',
+            name: cardData.name,
+            set: cardData.set.name
+        };
+    }
+
 
     const addCardFromUrl = async () => {
         if (!cardUrl.trim()) {
-            toast.error('Inserisci un URL valido');
+            toast.error('Please enter a valid URL');
             return;
         }
         try {
@@ -81,18 +78,15 @@ export default function LorcanaProxyPrinter() {
             };
             setCards([...cards, newCard]);
             setCardUrl('');
-            toast.success('Carta aggiunta con successo!');
+            toast.success('Card added successfully!');
         } catch (error) {
-            toast.error('Errore nel caricamento dell\'immagine');
+            toast.error('Error loading the image');
         }
     };
 
     const handleFileUpload = (event) => {
         const files = Array.from(event.target.files);
-        const remainingSlots = 9 - cards.length;
-        const filesToProcess = files.slice(0, remainingSlots);
-
-        filesToProcess.forEach(file => {
+        files.forEach(file => {
             const reader = new FileReader();
             reader.onload = (e) => {
                 const newCard = {
@@ -101,12 +95,15 @@ export default function LorcanaProxyPrinter() {
                     type: 'file',
                     name: file.name
                 };
-                setCards(prev => [...prev, newCard]);
-                toast.success('Carta caricata con successo!');
+                setCards(prev => {
+                    const updated = [...prev, newCard];
+                    setCurrentPage(Math.ceil(updated.length / 9));
+                    return updated;
+                });
+                toast.success('Card uploaded successfully!');
             };
             reader.readAsDataURL(file);
         });
-
         // Reset file input
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
@@ -115,8 +112,9 @@ export default function LorcanaProxyPrinter() {
 
     const removeCard = (cardId) => {
         setCards(cards.filter(card => card.id !== cardId));
-        toast.info('Carta rimossa');
+        toast.info('Card removed');
     };
+
 
     const clearAllCards = () => {
         setCards([]);
@@ -126,130 +124,198 @@ export default function LorcanaProxyPrinter() {
         setShowResults(false);
     };
 
+    // Clipboard import logic
+    const importFromClipboard = async () => {
+        let text = '';
+        try {
+            text = await navigator.clipboard.readText();
+        } catch (e) {
+            toast.error('Could not read clipboard.');
+            return;
+        }
+        if (!text.trim()) {
+            toast.error('Clipboard is empty.');
+            return;
+        }
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (!lines.length) {
+            toast.error('No valid lines found in clipboard.');
+            return;
+        }
+        let newCards = [...cards];
+        for (const line of lines) {
+            // Parse: quantity name - version
+            const match = line.match(/^(\d+)\s+([^\-]+?)(?:\s*-\s*(.+))?$/);
+            if (!match) continue;
+            const quantity = parseInt(match[1], 10);
+            const name = match[2].trim();
+            const version = match[3] ? match[3].trim() : '';
+            try {
+                const res = await fetch(`https://api.lorcast.com/v0/cards/search?q=${encodeURIComponent(name)}`);
+                if (!res.ok) continue;
+                const data = await res.json();
+                const results = data.results || [];
+                let cardObj = null;
+                if (version) {
+                    cardObj = results.find(c => c.version && c.version.toLowerCase() === version.toLowerCase());
+                }
+                if (!cardObj && results.length) {
+                    cardObj = results[0]; // fallback to first result
+                }
+                if (cardObj && cardObj.image_uris && cardObj.image_uris.digital && cardObj.image_uris.digital.normal) {
+                    for (let i = 0; i < quantity; i++) {
+                        newCards.push({
+                            id: Date.now() + Math.random(),
+                            src: cardObj.image_uris.digital.normal,
+                            type: 'import',
+                            name: cardObj.name,
+                            set: cardObj.set?.name || '',
+                            version: cardObj.version || ''
+                        });
+                    }
+                }
+            } catch (e) {
+                // skip on error
+            }
+        }
+        setCards(newCards);
+        setCurrentPage(Math.ceil(newCards.length / 9) || 1);
+        toast.success('Imported cards from clipboard!');
+    };
+
     const generatePDF = async () => {
         if (cards.length === 0) {
-            alert('Aggiungi almeno una carta prima di generare il PDF!');
+            alert('Add at least one card before generating the PDF!');
             return;
         }
-
-        // Apro subito la finestra per evitare il blocco pop-up
-        const pdfWindow = window.open('', '_blank');
-        if (!pdfWindow) {
-            alert('Pop-up bloccato! Consenti i pop-up per questo sito.');
-            return;
-        }
-
+        setIsGeneratingPDF(true);
         try {
-            // Dimensioni carta in mm
+            // PDF and card layout constants
             const cardWidthMM = 64;
             const cardHeightMM = 89;
             const cardsPerRow = 3;
             const cardsPerCol = 3;
-            const spacingMM = 4; // Spazio tra le carte
-            const pageWidthMM = 210;
-            const pageHeightMM = 297;
-
-            // Calcola la larghezza e altezza totale occupata dalla griglia
-            const totalGridWidth = cardWidthMM * cardsPerRow + spacingMM * (cardsPerRow - 1);
-            const totalGridHeight = cardHeightMM * cardsPerCol + spacingMM * (cardsPerCol - 1);
-            // Calcola il margine per centrare la griglia
-            const marginX = (pageWidthMM - totalGridWidth) / 2;
-            const marginY = (pageHeightMM - totalGridHeight) / 2;
-
-            // Canvas temporaneo per la pagina A4 a 150 DPI
+            const spacingMM = 4;
+            // Letter size: 8.5 x 11 inches = 215.9 x 279.4 mm
+            const pageWidthMM = 215.9;
+            const pageHeightMM = 279.4;
             const DPI = 150;
-            const canvas = document.createElement('canvas');
-            canvas.width = Math.round(pageWidthMM / 25.4 * DPI);
-            canvas.height = Math.round(pageHeightMM / 25.4 * DPI);
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // mm -> px
             const mmToPx = mm => Math.round(mm / 25.4 * DPI);
 
-            // Funzione per caricare un'immagine (usa proxy solo se serve)
-            const loadImage = (src) => {
+            // Helper: load image with retry
+            const loadImageWithRetry = (src, retries = 2, delay = 200) => {
                 return new Promise((resolve, reject) => {
-                    const img = new window.Image();
-                    img.crossOrigin = 'anonymous';
-                    img.onload = () => resolve(img);
-                    img.onerror = () => reject(new Error('Immagine non caricata'));
-                    if (src.startsWith('data:') || src.startsWith('blob:')) {
-                        img.src = src;
-                    } else {
-                        img.src = corsProxyUrl(src);
+                    let attempts = 0;
+                    function tryLoad() {
+                        const img = new window.Image();
+                        img.crossOrigin = 'anonymous';
+                        img.onload = () => resolve(img);
+                        img.onerror = () => {
+                            if (attempts < retries) {
+                                attempts++;
+                                setTimeout(tryLoad, delay);
+                            } else {
+                                reject(new Error('Immagine non caricata'));
+                            }
+                        };
+                        if (src.startsWith('data:') || src.startsWith('blob:')) {
+                            img.src = src;
+                        } else {
+                            img.src = corsProxyUrl(src);
+                        }
                     }
+                    tryLoad();
                 });
             };
 
-            // Carica e disegna ogni carta
-            for (let i = 0; i < cards.length && i < 9; i++) {
-                const row = Math.floor(i / 3);
-                const col = i % 3;
-                const xMM = marginX + col * (cardWidthMM + spacingMM);
-                const yMM = marginY + row * (cardHeightMM + spacingMM);
-                const x = mmToPx(xMM);
-                const y = mmToPx(yMM);
-                const w = mmToPx(cardWidthMM);
-                const h = mmToPx(cardHeightMM);
+            // Preload all images in parallel (with retry)
+            const imagePromises = cards.map(card =>
+                loadImageWithRetry(card.src).then(img => ({ img, error: null })).catch(error => ({ img: null, error }))
+            );
+            const loadedImages = await Promise.all(imagePromises);
 
-                try {
-                    const img = await loadImage(cards[i].src);
-                    // Calcola le dimensioni mantenendo l'aspect ratio
-                    let drawWidth = w;
-                    let drawHeight = h;
-                    const imgRatio = img.width / img.height;
-                    const cardRatio = w / h;
-                    if (imgRatio > cardRatio) {
-                        drawHeight = drawWidth / imgRatio;
-                    } else {
-                        drawWidth = drawHeight * imgRatio;
-                    }
-                    // Centra l'immagine nello spazio della carta
-                    const xOffset = x + (w - drawWidth) / 2;
-                    const yOffset = y + (h - drawHeight) / 2;
-                    ctx.drawImage(img, xOffset, yOffset, drawWidth, drawHeight);
-                    // Disegna un bordo
-                    ctx.strokeStyle = '#000000';
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(x, y, w, h);
-                } catch (error) {
-                    ctx.fillStyle = '#cccccc';
-                    ctx.fillRect(x, y, w, h);
-                    ctx.strokeStyle = '#000000';
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(x, y, w, h);
-                    ctx.fillStyle = '#333';
-                    ctx.font = 'bold 16px Arial';
-                    ctx.fillText('Immagine non trovata', x + 10, y + h / 2);
-                }
-            }
-
-            // Converti il canvas in PDF
-            const imgData = canvas.toDataURL('image/jpeg', 0.92);
             const pdf = new jsPDF({
                 orientation: 'portrait',
                 unit: 'mm',
-                format: 'a4'
+                format: 'letter'
             });
-            pdf.addImage(imgData, 'JPEG', 0, 0, pageWidthMM, pageHeightMM);
+
+            const totalPages = Math.ceil(cards.length / 9);
+            for (let page = 0; page < totalPages; page++) {
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(pageWidthMM / 25.4 * DPI);
+                canvas.height = Math.round(pageHeightMM / 25.4 * DPI);
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const totalGridWidth = cardWidthMM * cardsPerRow + spacingMM * (cardsPerRow - 1);
+                const totalGridHeight = cardHeightMM * cardsPerCol + spacingMM * (cardsPerCol - 1);
+                const marginX = (pageWidthMM - totalGridWidth) / 2;
+                const marginY = (pageHeightMM - totalGridHeight) / 2;
+
+                for (let i = 0; i < 9; i++) {
+                    const cardIndex = page * 9 + i;
+                    if (cardIndex >= cards.length) break;
+                    const row = Math.floor(i / 3);
+                    const col = i % 3;
+                    const xMM = marginX + col * (cardWidthMM + spacingMM);
+                    const yMM = marginY + row * (cardHeightMM + spacingMM);
+                    const x = mmToPx(xMM);
+                    const y = mmToPx(yMM);
+                    const w = mmToPx(cardWidthMM);
+                    const h = mmToPx(cardHeightMM);
+                    const loaded = loadedImages[cardIndex];
+                    if (loaded && loaded.img) {
+                        // Draw loaded image
+                        let drawWidth = w;
+                        let drawHeight = h;
+                        const imgRatio = loaded.img.width / loaded.img.height;
+                        const cardRatio = w / h;
+                        if (imgRatio > cardRatio) {
+                            drawHeight = drawWidth / imgRatio;
+                        } else {
+                            drawWidth = drawHeight * imgRatio;
+                        }
+                        const xOffset = x + (w - drawWidth) / 2;
+                        const yOffset = y + (h - drawHeight) / 2;
+                        ctx.drawImage(loaded.img, xOffset, yOffset, drawWidth, drawHeight);
+                        ctx.strokeStyle = '#000000';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(x, y, w, h);
+                    } else {
+                        // Draw error placeholder
+                        ctx.fillStyle = '#cccccc';
+                        ctx.fillRect(x, y, w, h);
+                        ctx.strokeStyle = '#000000';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(x, y, w, h);
+                        ctx.fillStyle = '#333';
+                        ctx.font = 'bold 16px Arial';
+                        ctx.fillText('Image not found', x + 10, y + h / 2);
+                    }
+                }
+                const imgData = canvas.toDataURL('image/jpeg', 0.92);
+                if (page > 0) pdf.addPage();
+                pdf.addImage(imgData, 'JPEG', 0, 0, pageWidthMM, pageHeightMM);
+            }
             pdf.autoPrint();
-            // Scrivi il PDF nella finestra già aperta
             const pdfBlob = pdf.output('blob');
             const pdfUrl = URL.createObjectURL(new Blob([pdfBlob], { type: 'application/pdf' }));
-            pdfWindow.location.href = pdfUrl;
+            window.open(pdfUrl, '_blank');
         } catch (error) {
             console.error('Errore nella generazione del PDF:', error);
             alert('Errore nella generazione del PDF. Assicurati che le immagini siano accessibili.');
-            pdfWindow.close();
+        } finally {
+            setIsGeneratingPDF(false);
         }
     };
 
     const renderCardSlots = () => {
         const slots = [];
+        const startIdx = (currentPage - 1) * 9;
         for (let i = 0; i < 9; i++) {
-            const card = cards[i];
+            const card = cards[startIdx + i];
             slots.push(
                 <div key={i} className="col-md-4 mb-3 d-flex justify-content-center">
                     <div className={`card-slot ${card ? 'filled' : ''}`} style={{
@@ -271,7 +337,7 @@ export default function LorcanaProxyPrinter() {
                             <>
                                 <img
                                     src={card.src}
-                                    alt={`Carta ${i + 1}`}
+                                    alt={`Carta ${startIdx + i + 1}`}
                                     style={{
                                         width: '100%',
                                         height: '100%',
@@ -305,7 +371,7 @@ export default function LorcanaProxyPrinter() {
                         ) : (
                             <div className="text-muted text-center w-100 h-100 d-flex flex-column align-items-center justify-content-center">
                                 <div style={{ fontSize: '24px', marginBottom: '10px' }}>🃏</div>
-                                <small>Slot {i + 1}</small>
+                                <small>Slot {startIdx + i + 1}</small>
                             </div>
                         )}
                     </div>
@@ -315,6 +381,7 @@ export default function LorcanaProxyPrinter() {
         return slots;
     };
 
+    // ...existing code...
     return (
         <div style={{
             minHeight: '100vh',
@@ -348,7 +415,7 @@ export default function LorcanaProxyPrinter() {
                     </h1>
                     <h2 className="h3 text-warning mb-3">Proxy Card Printer</h2>
                     <p className="lead" style={{ color: '#b8b8ff' }}>
-                        Crea e stampa le tue carte proxy personalizzate
+                        Create and print your own custom proxy cards
                     </p>
                 </div>
 
@@ -362,13 +429,13 @@ export default function LorcanaProxyPrinter() {
                 }}>
                     {/* Ricerca Carte */}
                     <div className="mb-4">
-                        <h5 className="text-warning mb-3">🔍 Cerca Carte Disney Lorcana</h5>
+                        <h5 className="text-warning mb-3">🔍 Search Disney Lorcana Cards</h5>
                         <div className="row mb-3">
                             <div className="col-md-8 mb-2 mb-md-0">
                                 <input
                                     type="text"
                                     className="form-control form-control-lg"
-                                    placeholder="Cerca carte per nome (es. 'Mickey Mouse', 'Elsa')..."
+                                    placeholder="Search cards by name (e.g. 'Mickey Mouse', 'Elsa')..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     onKeyPress={(e) => e.key === 'Enter' && searchCards()}
@@ -392,7 +459,25 @@ export default function LorcanaProxyPrinter() {
                                         fontWeight: 'bold'
                                     }}
                                 >
-                                    {isSearching ? '🔄 Ricerca...' : '🔍 Cerca'}
+                                    {isSearching ? '🔄 Searching...' : '🔍 Search'}
+                                </button>
+                            </div>
+                        </div>
+                        <div className="row mb-3">
+                            <div className="col-12 d-flex justify-content-center">
+                                <button
+                                    className="btn btn-primary btn-lg mt-2"
+                                    onClick={importFromClipboard}
+                                    style={{
+                                        background: 'linear-gradient(45deg, #007bff, #00c6ff)',
+                                        border: 'none',
+                                        borderRadius: '10px',
+                                        color: 'white',
+                                        fontWeight: 'bold',
+                                        minWidth: '200px'
+                                    }}
+                                >
+                                    📋 Import from Clipboard
                                 </button>
                             </div>
                         </div>
@@ -407,13 +492,13 @@ export default function LorcanaProxyPrinter() {
                             }}>
                                 <div className="d-flex justify-content-between align-items-center mb-3">
                                     <h6 className="text-info mb-0">
-                                        Risultati trovati: {searchResults.length}
+                                        Results found: {searchResults.length}
                                     </h6>
                                     <button
                                         className="btn btn-sm btn-outline-light"
                                         onClick={() => setShowResults(false)}
                                     >
-                                        ✕ Chiudi
+                                        ✕ Close
                                     </button>
                                 </div>
 
@@ -467,8 +552,8 @@ export default function LorcanaProxyPrinter() {
                                 ) : (
                                     <div className="text-center text-muted py-4">
                                         <div style={{ fontSize: '48px', marginBottom: '15px' }}>🃏</div>
-                                        <p>Nessuna carta trovata per "{searchQuery}"</p>
-                                        <small>Prova con termini diversi come "Mickey", "Elsa", "Beast"...</small>
+                                        <p>No cards found for "{searchQuery}"</p>
+                                        <small>Try different terms like "Mickey", "Elsa", "Beast"...</small>
                                     </div>
                                 )}
                             </div>
@@ -483,17 +568,26 @@ export default function LorcanaProxyPrinter() {
                                 borderRadius: '20px',
                                 color: '#b8b8ff'
                             }}>
-                            oppure
+                            or
                         </span>
                     </div>
 
                 </div>
 
-                {/* Card Counter */}
+                {/* Card Counter & Pagination */}
                 <div className="text-center mb-4">
                     <h4 className="text-warning">
-                        Carte aggiunte: <span className="badge bg-warning text-dark">{cards.length}</span>/9
+                        Cards added: <span className="badge bg-warning text-dark">{cards.length}</span>
                     </h4>
+                    {cards.length > 9 && (
+                        <div className="d-flex justify-content-center align-items-center gap-2 mt-2">
+                            <button className="btn btn-sm btn-secondary" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>&lt; Prev</button>
+                            <span style={{ minWidth: 80 }}>
+                                Page {currentPage} of {Math.ceil(cards.length / 9)}
+                            </span>
+                            <button className="btn btn-sm btn-secondary" onClick={() => setCurrentPage(p => Math.min(Math.ceil(cards.length / 9), p + 1))} disabled={currentPage === Math.ceil(cards.length / 9)}>Next &gt;</button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Cards Grid */}
@@ -514,7 +608,7 @@ export default function LorcanaProxyPrinter() {
                         <button
                             className="btn btn-lg px-4"
                             onClick={generatePDF}
-                            disabled={cards.length === 0}
+                            disabled={cards.length === 0 || isGeneratingPDF}
                             style={{
                                 background: 'linear-gradient(45deg, #4CAF50, #45a049)',
                                 border: 'none',
@@ -524,12 +618,12 @@ export default function LorcanaProxyPrinter() {
                                 minWidth: '160px'
                             }}
                         >
-                            🖨️ Stampa Carte
+                            {isGeneratingPDF ? '⏳ Generating PDF...' : '🖨️ Print Cards'}
                         </button>
                         <button
                             className="btn btn-lg px-4"
                             onClick={clearAllCards}
-                            disabled={cards.length === 0}
+                            disabled={cards.length === 0 || isGeneratingPDF}
                             style={{
                                 background: 'linear-gradient(45deg, #ff4757, #ff6b6b)',
                                 border: 'none',
@@ -539,7 +633,7 @@ export default function LorcanaProxyPrinter() {
                                 minWidth: '160px'
                             }}
                         >
-                            🗑️ Cancella Tutto
+                            🗑️ Clear All
                         </button>
                     </div>
                 </div>
@@ -550,20 +644,20 @@ export default function LorcanaProxyPrinter() {
                     border: '1px solid rgba(255, 215, 0, 0.3)',
                     borderRadius: '15px'
                 }}>
-                    <h3 className="text-warning mb-3">📋 Istruzioni d'uso</h3>
+                    <h3 className="text-warning mb-3">📋 Instructions</h3>
                     <div className="row">
                         <div className="col-md-6">
                             <ul className="list-unstyled">
-                                <li className="mb-2">✨ Cerca carte ufficiali dal database Lorcana</li>
-                                <li className="mb-2">✨ Aggiungi fino a 9 carte usando ricerca</li>
-                                <li className="mb-2">✨ Le carte saranno disposte in una griglia 3x3</li>
+                                <li className="mb-2">✨ Search official cards from the Lorcana database</li>
+                                <li className="mb-2">✨ Add up to 9 cards using the search</li>
+                                <li className="mb-2">✨ Cards will be arranged in a 3x3 grid</li>
                             </ul>
                         </div>
                         <div className="col-md-6">
                             <ul className="list-unstyled">
-                                <li className="mb-2">✨ Clicca su "Stampa Carte" per creare il file stampabile o generare un PDF</li>
-                                <li className="mb-2">✨ Dimensioni ottimizzate per stampa su A4</li>
-                                <li className="mb-2">✨ Rimuovi singole carte con il pulsante ×</li>
+                                <li className="mb-2">✨ Click "Print Cards" to create a printable file or generate a PDF</li>
+                                <li className="mb-2">✨ Optimized size for printing on A4</li>
+                                <li className="mb-2">✨ Remove individual cards with the × button</li>
                             </ul>
                         </div>
                     </div>
@@ -586,6 +680,27 @@ export default function LorcanaProxyPrinter() {
                     fontSize: '14px'
                 }}
             />
+            {/* Loading overlay for PDF generation */}
+            {isGeneratingPDF && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100vw',
+                    height: '100vh',
+                    background: 'rgba(0,0,0,0.7)',
+                    zIndex: 99999,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexDirection: 'column',
+                }}>
+                    <div className="spinner-border text-warning" style={{ width: 80, height: 80, marginBottom: 24 }} role="status">
+                        <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <div style={{ color: 'white', fontSize: 24, fontWeight: 'bold' }}>Generating PDF, please wait...</div>
+                </div>
+            )}
         </div>
     );
-}
+};
