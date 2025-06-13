@@ -195,7 +195,7 @@ export default function LorcanaProxyPrinter() {
             const cardHeightMM = 89;
             const cardsPerRow = 3;
             const cardsPerCol = 3;
-            const spacingMM = 4;
+            const spacingMM = 0;
             // Letter size: 8.5 x 11 inches = 215.9 x 279.4 mm
             const pageWidthMM = 215.9;
             const pageHeightMM = 279.4;
@@ -249,10 +249,11 @@ export default function LorcanaProxyPrinter() {
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                const totalGridWidth = cardWidthMM * cardsPerRow + spacingMM * (cardsPerRow - 1);
-                const totalGridHeight = cardHeightMM * cardsPerCol + spacingMM * (cardsPerCol - 1);
-                const marginX = (pageWidthMM - totalGridWidth) / 2;
-                const marginY = (pageHeightMM - totalGridHeight) / 2;
+                const totalGridWidth = cardWidthMM * cardsPerRow;
+                const totalGridHeight = cardHeightMM * cardsPerCol;
+                // Center grid if page is larger than grid, else start at 0
+                const marginX = Math.max(0, (pageWidthMM - totalGridWidth) / 2);
+                const marginY = Math.max(0, (pageHeightMM - totalGridHeight) / 2);
 
                 for (let i = 0; i < 9; i++) {
                     const cardIndex = page * 9 + i;
