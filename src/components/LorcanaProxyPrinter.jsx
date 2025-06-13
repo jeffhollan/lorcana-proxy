@@ -16,9 +16,19 @@ export default function LorcanaProxyPrinter() {
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const fileInputRef = useRef(null);
 
-    const corsProxyUrl = (url) => {
-        return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-    }
+
+    // Try multiple CORS proxies for best reliability
+    const corsProxies = [
+        url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        url => `https://thingproxy.freeboard.io/fetch/${url}`,
+    ];
+
+    // Try each proxy in order until one works (for image loading)
+    const corsProxyUrl = (url, attempt = 0) => {
+        if (attempt >= corsProxies.length) return corsProxies[0](url); // fallback to first
+        return corsProxies[attempt](url);
+    };
 
     const searchCards = async () => {
         if (!searchQuery.trim()) {
@@ -202,10 +212,14 @@ export default function LorcanaProxyPrinter() {
             const DPI = 150;
             const mmToPx = mm => Math.round(mm / 25.4 * DPI);
 
-            // Helper: load image with retry
-            const loadImageWithRetry = (src, retries = 2, delay = 200) => {
+
+            // Helper: try to get image from DOM, else load with retry
+            // Load image with retry and CORS proxy cycling (no DOM lookup)
+            const loadImageWithRetryAndProxies = (src, retries = 5, delay = 400) => {
+                const isDataOrBlob = src.startsWith('data:') || src.startsWith('blob:');
                 return new Promise((resolve, reject) => {
                     let attempts = 0;
+                    let proxyAttempt = 0;
                     function tryLoad() {
                         const img = new window.Image();
                         img.crossOrigin = 'anonymous';
@@ -213,24 +227,25 @@ export default function LorcanaProxyPrinter() {
                         img.onerror = () => {
                             if (attempts < retries) {
                                 attempts++;
+                                proxyAttempt = (proxyAttempt + 1) % corsProxies.length;
                                 setTimeout(tryLoad, delay);
                             } else {
-                                reject(new Error('Immagine non caricata'));
+                                reject(new Error('Image not loaded: ' + src));
                             }
                         };
-                        if (src.startsWith('data:') || src.startsWith('blob:')) {
+                        if (isDataOrBlob) {
                             img.src = src;
                         } else {
-                            img.src = corsProxyUrl(src);
+                            img.src = corsProxyUrl(src, proxyAttempt);
                         }
                     }
                     tryLoad();
                 });
             };
 
-            // Preload all images in parallel (with retry)
+            // Preload all images in parallel (just load with retry and proxies)
             const imagePromises = cards.map(card =>
-                loadImageWithRetry(card.src).then(img => ({ img, error: null })).catch(error => ({ img: null, error }))
+                loadImageWithRetryAndProxies(card.src).then(img => ({ img, error: null })).catch(error => ({ img: null, error }))
             );
             const loadedImages = await Promise.all(imagePromises);
 
@@ -305,8 +320,16 @@ export default function LorcanaProxyPrinter() {
             const pdfUrl = URL.createObjectURL(new Blob([pdfBlob], { type: 'application/pdf' }));
             window.open(pdfUrl, '_blank');
         } catch (error) {
-            console.error('Errore nella generazione del PDF:', error);
-            alert('Errore nella generazione del PDF. Assicurati che le immagini siano accessibili.');
+            console.error('Error generating PDF:', error);
+            let failedImages = [];
+            if (typeof error === 'object' && error && error.failedImages) {
+                failedImages = error.failedImages;
+            }
+            let msg = 'Error generating the PDF. Make sure all card images are accessible.';
+            if (failedImages.length > 0) {
+                msg += '\nFailed images:\n' + failedImages.join('\n');
+            }
+            alert(msg);
         } finally {
             setIsGeneratingPDF(false);
         }
