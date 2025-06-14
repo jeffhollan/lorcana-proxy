@@ -334,7 +334,27 @@ export default function LorcanaProxyPrinter() {
             pdf.autoPrint();
             const pdfBlob = pdf.output('blob');
             const pdfUrl = URL.createObjectURL(new Blob([pdfBlob], { type: 'application/pdf' }));
-            window.open(pdfUrl, '_blank');
+            // Open a new window synchronously for print dialog compatibility
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+                printWindow.document.write(`<!DOCTYPE html><html><head><title>Print PDF</title></head><body style="margin:0"><iframe src="${pdfUrl}" style="width:100vw;height:100vh;border:none;" id="pdfFrame"></iframe></body></html>`);
+                printWindow.document.close();
+                // Wait for the iframe to load, then print
+                printWindow.onload = () => {
+                    const frame = printWindow.document.getElementById('pdfFrame');
+                    if (frame) {
+                        frame.onload = () => {
+                            printWindow.focus();
+                            printWindow.print();
+                        };
+                    } else {
+                        printWindow.focus();
+                        printWindow.print();
+                    }
+                };
+            } else {
+                alert('Unable to open print window. Please allow popups for this site.');
+            }
         } catch (error) {
             console.error('Error generating PDF:', error);
             let failedImages = [];
@@ -711,7 +731,7 @@ export default function LorcanaProxyPrinter() {
                         <div className="col-md-6">
                             <ul className="list-unstyled">
                                 <li className="mb-2">✨ Click "Print Cards" to create a printable file or generate a PDF</li>
-                                <li className="mb-2">✨ Optimized size for printing on 8x11 letter</li>
+                                <li className="mb-2">✨ Optimized size for printing on 8x11 letter or A4</li>
                                 <li className="mb-2">✨ Import from clipboard for decks from dreamborn.ink</li>
                             </ul>
                         </div>
