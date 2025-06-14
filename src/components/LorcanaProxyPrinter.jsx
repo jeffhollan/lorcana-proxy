@@ -1,4 +1,3 @@
-
 import { useState, useRef } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import jsPDF from 'jspdf';
@@ -491,6 +490,21 @@ export default function LorcanaProxyPrinter() {
                     <p className="lead" style={{ color: '#b8b8ff' }}>
                         Create and print your own custom proxy cards
                     </p>
+                    <div style={{
+                        fontSize: '0.95rem',
+                        color: '#888',
+                        background: 'none',
+                        padding: 0,
+                        margin: '8px auto 0 auto',
+                        maxWidth: '700px',
+                        textAlign: 'center',
+                        boxShadow: 'none',
+                        border: 'none',
+                    }}>
+                        I built this for personal use inspired by popular TCG tools like{' '}
+                        <a href="https://limitlesstcg.com/tools/proxies" target="_blank" rel="noopener noreferrer" style={{ color: '#007bff', textDecoration: 'underline' }}>https://limitlesstcg.com/tools/proxies</a>{' '}
+                        – for personal non commercial use only. You are responsible to make sure you are adhering to usage and copyrights.
+                    </div>
                 </div>
 
                 {/* Search Section */}
