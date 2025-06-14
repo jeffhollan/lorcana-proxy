@@ -442,7 +442,7 @@ export default function LorcanaProxyPrinter() {
                     boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)'
                 }}>
                     <h1 className="display-3 gradient-text mb-3 fw-bold">
-                        ✨Lorcana Palermo <br />Proxy Printer✨
+                        ✨Lorcana <br />Proxy Printer✨
                     </h1>
                     <h2 className="h3 text-warning mb-3">Proxy Card Printer</h2>
                     <p className="lead" style={{ color: '#b8b8ff' }}>
