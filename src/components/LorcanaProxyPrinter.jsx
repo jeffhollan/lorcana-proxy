@@ -200,7 +200,7 @@ export default function LorcanaProxyPrinter() {
         toast.success('Imported cards from clipboard!');
     };
 
-    const generatePDF = async () => {
+    const generatePDF = async (paper = 'letter') => {
         if (cards.length === 0) {
             alert('Add at least one card before generating the PDF!');
             return;
@@ -213,9 +213,18 @@ export default function LorcanaProxyPrinter() {
             const cardsPerRow = 3;
             const cardsPerCol = 3;
             const spacingMM = 0;
-            // Letter size: 8.5 x 11 inches = 215.9 x 279.4 mm
-            const pageWidthMM = 215.9;
-            const pageHeightMM = 279.4;
+            let pageWidthMM, pageHeightMM, pdfFormat;
+            if (paper === 'a4') {
+                // A4: 210 x 297 mm
+                pageWidthMM = 210;
+                pageHeightMM = 297;
+                pdfFormat = 'a4';
+            } else {
+                // Letter: 8.5 x 11 inches = 215.9 x 279.4 mm
+                pageWidthMM = 215.9;
+                pageHeightMM = 279.4;
+                pdfFormat = 'letter';
+            }
             const DPI = 150;
             const mmToPx = mm => Math.round(mm / 25.4 * DPI);
 
@@ -259,7 +268,7 @@ export default function LorcanaProxyPrinter() {
             const pdf = new jsPDF({
                 orientation: 'portrait',
                 unit: 'mm',
-                format: 'letter'
+                format: pdfFormat
             });
 
             const totalPages = Math.ceil(cards.length / 9);
@@ -638,7 +647,7 @@ export default function LorcanaProxyPrinter() {
                     <div className="d-flex flex-column flex-md-row gap-3 justify-content-center">
                         <button
                             className="btn btn-lg px-4"
-                            onClick={generatePDF}
+                            onClick={() => generatePDF('a4')}
                             disabled={cards.length === 0 || isGeneratingPDF}
                             style={{
                                 background: 'linear-gradient(45deg, #4CAF50, #45a049)',
@@ -649,7 +658,22 @@ export default function LorcanaProxyPrinter() {
                                 minWidth: '160px'
                             }}
                         >
-                            {isGeneratingPDF ? '⏳ Generating PDF...' : '🖨️ Print Cards'}
+                            {isGeneratingPDF ? '⏳ Generating PDF...' : '🖨️ Print A4'}
+                        </button>
+                        <button
+                            className="btn btn-lg px-4"
+                            onClick={() => generatePDF('letter')}
+                            disabled={cards.length === 0 || isGeneratingPDF}
+                            style={{
+                                background: 'linear-gradient(45deg, #007bff, #00c6ff)',
+                                border: 'none',
+                                borderRadius: '10px',
+                                color: 'white',
+                                fontWeight: 'bold',
+                                minWidth: '160px'
+                            }}
+                        >
+                            {isGeneratingPDF ? '⏳ Generating PDF...' : '🖨️ Print Letter (8.5x11)'}
                         </button>
                         <button
                             className="btn btn-lg px-4"
