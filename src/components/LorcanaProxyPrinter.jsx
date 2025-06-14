@@ -65,6 +65,13 @@ export default function LorcanaProxyPrinter() {
             name: cardData.name,
             set: cardData.set.name
         };
+        setCards(prev => {
+            const updated = [...prev, newCard];
+            setCurrentPage(Math.ceil(updated.length / 9));
+            return updated;
+        });
+        setSearchQuery('');
+        toast.success(`${cardData.name} added to the list`);
     }
 
 
@@ -673,15 +680,15 @@ export default function LorcanaProxyPrinter() {
                         <div className="col-md-6">
                             <ul className="list-unstyled">
                                 <li className="mb-2">✨ Search official cards from the Lorcana database</li>
-                                <li className="mb-2">✨ Add up to 9 cards using the search</li>
+                                <li className="mb-2">✨ Add many pages of cards</li>
                                 <li className="mb-2">✨ Cards will be arranged in a 3x3 grid</li>
                             </ul>
                         </div>
                         <div className="col-md-6">
                             <ul className="list-unstyled">
                                 <li className="mb-2">✨ Click "Print Cards" to create a printable file or generate a PDF</li>
-                                <li className="mb-2">✨ Optimized size for printing on A4</li>
-                                <li className="mb-2">✨ Remove individual cards with the × button</li>
+                                <li className="mb-2">✨ Optimized size for printing on 8x11 letter</li>
+                                <li className="mb-2">✨ Import from clipboard for decks from dreamborn.ink</li>
                             </ul>
                         </div>
                     </div>
