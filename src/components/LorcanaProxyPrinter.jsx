@@ -200,7 +200,8 @@ export default function LorcanaProxyPrinter() {
         toast.success('Imported cards from clipboard!');
     };
 
-    const generatePDF = async (paper = 'letter') => {
+    // mode: 'print' or 'download'
+    const generatePDF = async (paper = 'letter', mode = 'print') => {
         if (cards.length === 0) {
             alert('Add at least one card before generating the PDF!');
             return;
@@ -334,26 +335,39 @@ export default function LorcanaProxyPrinter() {
             pdf.autoPrint();
             const pdfBlob = pdf.output('blob');
             const pdfUrl = URL.createObjectURL(new Blob([pdfBlob], { type: 'application/pdf' }));
-            // Open a new window synchronously for print dialog compatibility
-            const printWindow = window.open('', '_blank');
-            if (printWindow) {
-                printWindow.document.write(`<!DOCTYPE html><html><head><title>Print PDF</title></head><body style="margin:0"><iframe src="${pdfUrl}" style="width:100vw;height:100vh;border:none;" id="pdfFrame"></iframe></body></html>`);
-                printWindow.document.close();
-                // Wait for the iframe to load, then print
-                printWindow.onload = () => {
-                    const frame = printWindow.document.getElementById('pdfFrame');
-                    if (frame) {
-                        frame.onload = () => {
+            if (mode === 'download') {
+                // Use a hidden link to trigger download (Safari/iOS compatible)
+                const link = document.createElement('a');
+                link.href = pdfUrl;
+                link.download = `lorcana-proxies-${paper}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                setTimeout(() => {
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(pdfUrl);
+                }, 100);
+            } else {
+                // Open a new window synchronously for print dialog compatibility
+                const printWindow = window.open('', '_blank');
+                if (printWindow) {
+                    printWindow.document.write(`<!DOCTYPE html><html><head><title>Print PDF</title></head><body style=\"margin:0\"><iframe src=\"${pdfUrl}\" style=\"width:100vw;height:100vh;border:none;\" id=\"pdfFrame\"></iframe></body></html>`);
+                    printWindow.document.close();
+                    // Wait for the iframe to load, then print
+                    printWindow.onload = () => {
+                        const frame = printWindow.document.getElementById('pdfFrame');
+                        if (frame) {
+                            frame.onload = () => {
+                                printWindow.focus();
+                                printWindow.print();
+                            };
+                        } else {
                             printWindow.focus();
                             printWindow.print();
-                        };
-                    } else {
-                        printWindow.focus();
-                        printWindow.print();
-                    }
-                };
-            } else {
-                alert('Unable to open print window. Please allow popups for this site.');
+                        }
+                    };
+                } else {
+                    alert('Unable to open print window. Please allow popups for this site.');
+                }
             }
         } catch (error) {
             console.error('Error generating PDF:', error);
@@ -667,7 +681,7 @@ export default function LorcanaProxyPrinter() {
                     <div className="d-flex flex-column flex-md-row gap-3 justify-content-center">
                         <button
                             className="btn btn-lg px-4"
-                            onClick={() => generatePDF('a4')}
+                            onClick={() => generatePDF('a4', 'print')}
                             disabled={cards.length === 0 || isGeneratingPDF}
                             style={{
                                 background: 'linear-gradient(45deg, #4CAF50, #45a049)',
@@ -682,7 +696,7 @@ export default function LorcanaProxyPrinter() {
                         </button>
                         <button
                             className="btn btn-lg px-4"
-                            onClick={() => generatePDF('letter')}
+                            onClick={() => generatePDF('letter', 'print')}
                             disabled={cards.length === 0 || isGeneratingPDF}
                             style={{
                                 background: 'linear-gradient(45deg, #007bff, #00c6ff)',
@@ -694,6 +708,36 @@ export default function LorcanaProxyPrinter() {
                             }}
                         >
                             {isGeneratingPDF ? '⏳ Generating PDF...' : '🖨️ Print Letter (8.5x11)'}
+                        </button>
+                        <button
+                            className="btn btn-lg px-4"
+                            onClick={() => generatePDF('a4', 'download')}
+                            disabled={cards.length === 0 || isGeneratingPDF}
+                            style={{
+                                background: 'linear-gradient(45deg, #ffb347, #ffcc33)',
+                                border: 'none',
+                                borderRadius: '10px',
+                                color: 'white',
+                                fontWeight: 'bold',
+                                minWidth: '160px'
+                            }}
+                        >
+                            {isGeneratingPDF ? '⏳ Generating PDF...' : '⬇️ Download A4'}
+                        </button>
+                        <button
+                            className="btn btn-lg px-4"
+                            onClick={() => generatePDF('letter', 'download')}
+                            disabled={cards.length === 0 || isGeneratingPDF}
+                            style={{
+                                background: 'linear-gradient(45deg, #ffb347, #ffcc33)',
+                                border: 'none',
+                                borderRadius: '10px',
+                                color: 'white',
+                                fontWeight: 'bold',
+                                minWidth: '160px'
+                            }}
+                        >
+                            {isGeneratingPDF ? '⏳ Generating PDF...' : '⬇️ Download Letter (8.5x11)'}
                         </button>
                         <button
                             className="btn btn-lg px-4"
